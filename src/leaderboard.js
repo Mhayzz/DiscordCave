@@ -2,15 +2,23 @@ const { EmbedBuilder } = require('discord.js');
 const { getAllAccounts, getMeta, setMeta } = require('./utils/db');
 const { getMmr, getMmrHistory } = require('./utils/henrik');
 const { rrLostToday } = require('./utils/stats');
-const { updateHelpMessage } = require('./help');
 
 const META_KEY = 'leaderboardMessageId';
+const HELP_META = 'helpMessageId';
 
 const TIER_EMOJI_FALLBACK = {
   iron: '⚫', bronze: '🟤', silver: '⚪', gold: '🟡',
   platinum: '🔵', diamond: '💠', ascendant: '🟢',
   immortal: '🔴', radiant: '🌟',
 };
+
+const HELP_BLOCK =
+  '**📖 Comment utiliser le bot**\n' +
+  '• `/link riot_id:<pseudo> tag:<tag>` — lier un compte (max 3)\n' +
+  '• `/stats [membre] [compte]` — voir les stats détaillées\n' +
+  '• `/accounts` — lister tes comptes · `/unlink` — délier\n' +
+  '• `/leaderboard` — forcer un refresh du classement\n' +
+  '━━━━━━━━━━━━━━━━━━━━━━━━';
 
 function rankToEmojiName(rankName) {
   if (!rankName) return null;
@@ -77,11 +85,12 @@ function positionBadge(i) {
 
 async function buildLeaderboardEmbed(guild = null) {
   const accounts = getAllAccounts();
+
   if (accounts.length === 0) {
     return new EmbedBuilder()
       .setColor(0xff4655)
-      .setTitle('🎯 Classement Valorant')
-      .setDescription('Aucun joueur lié pour le moment.\nUtilise `/link riot_id tag` pour participer !')
+      .setTitle('🎯 CLASSEMENT VALORANT')
+      .setDescription(`${HELP_BLOCK}\n\n_Aucun joueur lié pour le moment. Utilise \`/link\` pour participer !_`)
       .setTimestamp();
   }
 
@@ -94,13 +103,10 @@ async function buildLeaderboardEmbed(guild = null) {
     if (!prev || acc.elo > prev.elo) userBest.set(acc.discordId, acc);
   }
 
-  const ranked = enriched
-    .filter((a) => a.ok)
-    .sort((a, b) => b.elo - a.elo);
+  const ranked = enriched.filter((a) => a.ok).sort((a, b) => b.elo - a.elo);
   const errored = enriched.filter((a) => !a.ok);
 
-  const lines = [];
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━');
+  const lines = [HELP_BLOCK, ''];
 
   ranked.forEach((acc, i) => {
     const badge = positionBadge(i);
@@ -124,14 +130,20 @@ async function buildLeaderboardEmbed(guild = null) {
   const totalUsers = userBest.size;
   const totalAccounts = ranked.length;
 
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(0xff4655)
     .setTitle('🎯 CLASSEMENT VALORANT')
     .setDescription(lines.join('\n').slice(0, 4000))
     .setFooter({ text: `${totalUsers} joueur(s) · ${totalAccounts} compte(s) · auto-update` })
     .setTimestamp();
+}
 
-  return embed;
+async function cleanupOldHelpMessage(channel) {
+  const helpId = getMeta(HELP_META);
+  if (!helpId) return;
+  const msg = await channel.messages.fetch(helpId).catch(() => null);
+  if (msg) await msg.delete().catch(() => {});
+  setMeta(HELP_META, null);
 }
 
 async function updateLeaderboard(client, channelId) {
@@ -146,19 +158,7 @@ async function updateLeaderboard(client, channelId) {
     await channel.guild.emojis.fetch().catch(() => {});
   }
 
-  await updateHelpMessage(channel).catch((e) => console.error('[help]', e.message));
-
-  const helpId = getMeta('helpMessageId');
-  const lbId = getMeta(META_KEY);
-  if (helpId && lbId) {
-    try {
-      if (BigInt(helpId) > BigInt(lbId)) {
-        const oldLb = await channel.messages.fetch(lbId).catch(() => null);
-        if (oldLb) await oldLb.delete().catch(() => {});
-        setMeta(META_KEY, null);
-      }
-    } catch {}
-  }
+  await cleanupOldHelpMessage(channel);
 
   const embed = await buildLeaderboardEmbed(channel.guild || null);
   const existingId = getMeta(META_KEY);
