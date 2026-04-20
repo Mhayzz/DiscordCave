@@ -1,26 +1,49 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getUser } = require('../utils/db');
+const { getAccounts, getAccountByRiotId } = require('../utils/db');
 const { getMmr, getMmrHistory, getMatches } = require('../utils/henrik');
 const { rrLostToday, winrateAndHs } = require('../utils/stats');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('stats')
-    .setDescription('Affiche tes stats Valorant (rank, RR, winrate, HS%, RR perdus aujourd\'hui)')
+    .setDescription('Affiche les stats Valorant (rank, RR, winrate, HS%, RR du jour)')
     .addUserOption((o) =>
       o.setName('membre')
         .setDescription('Voir les stats d\'un autre membre du serveur')
-        .setRequired(false)),
+        .setRequired(false))
+    .addStringOption((o) =>
+      o.setName('compte')
+        .setDescription('Quel compte Valorant si plusieurs lies (format Pseudo#Tag)')
+        .setRequired(false)
+        .setAutocomplete(true)),
+
+  async autocomplete(interaction) {
+    const focused = interaction.options.getFocused().toLowerCase();
+    const target = interaction.options.getUser('membre') || interaction.user;
+    const accounts = getAccounts(target.id);
+    const choices = accounts
+      .map((a) => `${a.name}#${a.tag}`)
+      .filter((s) => s.toLowerCase().includes(focused))
+      .slice(0, 25)
+      .map((s) => ({ name: s, value: s }));
+    await interaction.respond(choices).catch(() => {});
+  },
 
   async execute(interaction) {
     const target = interaction.options.getUser('membre') || interaction.user;
-    const linked = getUser(target.id);
+    const wanted = interaction.options.getString('compte');
+    const accounts = getAccounts(target.id);
 
-    if (!linked) {
+    if (accounts.length === 0) {
       const msg = target.id === interaction.user.id
-        ? 'Tu n\'as pas encore lie ton compte. Utilise `/link riot_id tag` pour commencer.'
-        : `${target.username} n'a pas lie de compte Valorant.`;
+        ? 'Tu n\'as pas encore lie de compte. Utilise `/link riot_id tag` pour commencer.'
+        : `${target.username} n'a lie aucun compte Valorant.`;
       return interaction.reply({ content: msg, ephemeral: true });
+    }
+
+    const linked = wanted ? getAccountByRiotId(target.id, wanted) : accounts[0];
+    if (!linked) {
+      return interaction.reply({ content: `Compte \`${wanted}\` non trouve pour ${target.username}.`, ephemeral: true });
     }
 
     await interaction.deferReply();
@@ -43,8 +66,11 @@ module.exports = {
 
       const rrDay = rrLostToday(mmrHistory);
       const perf = winrateAndHs(matches, puuid);
-
       const rankIcon = current.images?.large || current.images?.small || null;
+
+      const accountSwitcher = accounts.length > 1
+        ? `\n*${accounts.length} comptes lies. Utilise l'option \`compte\` pour switcher.*`
+        : '';
 
       const embed = new EmbedBuilder()
         .setColor(0xff4655)
@@ -73,8 +99,8 @@ module.exports = {
             name: "Aujourd'hui",
             value: rrDay.games > 0
               ? `**${rrDay.net >= 0 ? '+' : ''}${rrDay.net} RR** sur ${rrDay.games} partie(s)\n` +
-                `Gagnes: +${rrDay.gained} RR • Perdus: -${rrDay.lost} RR`
-              : 'Aucune partie classee aujourd\'hui',
+                `Gagnes: +${rrDay.gained} RR • Perdus: -${rrDay.lost} RR${accountSwitcher}`
+              : `Aucune partie classee aujourd'hui${accountSwitcher}`,
             inline: false,
           },
         )

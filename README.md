@@ -6,9 +6,10 @@ Bot Discord Valorant qui affiche **rank + RR**, **winrate %**, **HS %** et les *
 
 | Commande | Description |
 |---|---|
-| `/link <riot_id> <tag>` | Lie ton compte Valorant à ton Discord (ex: `/link Toxo 6969`) |
-| `/stats [membre]` | Affiche tes stats (ou celles d'un autre membre du serveur) |
-| `/unlink` | Délie ton compte Valorant |
+| `/link <riot_id> <tag>` | Lie un compte Valorant à ton Discord (jusqu'à **3 comptes**) |
+| `/stats [membre] [compte]` | Affiche les stats (autocomplete sur `compte` si plusieurs liés) |
+| `/accounts [membre]` | Liste les comptes liés |
+| `/unlink [compte]` | Délie un compte (vide = tout délier si un seul lié) |
 | `/leaderboard` | Force la mise à jour du classement du serveur |
 
 L'embed `/stats` montre :
