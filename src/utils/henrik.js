@@ -71,7 +71,7 @@ async function call(url) {
 }
 
 async function getAccount(name, tag) {
-  const data = await call(`${BASE_URL}/valorant/v2/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
+  const data = await call(`${BASE_URL}/valorant/v1/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
   return data.data;
 }
 
