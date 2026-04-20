@@ -11,6 +11,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
   ],
 });
 client.commands = new Collection();
@@ -55,6 +56,22 @@ client.on(Events.MessageCreate, async (message) => {
   setTimeout(() => {
     message.delete().catch(() => {});
   }, 10000);
+});
+
+client.on(Events.GuildMemberAdd, async (member) => {
+  if (member.user.bot) return;
+  const roleName = (process.env.DEFAULT_ROLE_NAME || 'caillou').toLowerCase();
+  const role = member.guild.roles.cache.find((r) => r.name.toLowerCase() === roleName);
+  if (!role) {
+    console.warn(`[welcome] rôle "${roleName}" introuvable dans ${member.guild.name}`);
+    return;
+  }
+  try {
+    await member.roles.add(role, 'DiscordCave: rôle par défaut');
+    console.log(`[welcome] ${role.name} attribué à ${member.user.tag}`);
+  } catch (err) {
+    console.error(`[welcome] échec attribution ${role.name} à ${member.user.tag}:`, err.message);
+  }
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
