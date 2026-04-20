@@ -2,6 +2,7 @@ require('dotenv').config();
 const { Client, Collection, GatewayIntentBits, Events } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const { deployCommands } = require('./deploy-commands');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
@@ -14,9 +15,18 @@ for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith('.js'))
   }
 }
 
-client.once(Events.ClientReady, (c) => {
+client.once(Events.ClientReady, async (c) => {
   console.log(`DiscordCave en ligne: ${c.user.tag}`);
   c.user.setActivity('Valorant | /stats', { type: 0 });
+
+  if (process.env.DEPLOY_COMMANDS_ON_START === 'true') {
+    try {
+      const { count, scope } = await deployCommands();
+      console.log(`${count} commande(s) deployee(s) au demarrage (${scope}).`);
+    } catch (err) {
+      console.error('Echec du deploiement des commandes au demarrage:', err.message);
+    }
+  }
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
