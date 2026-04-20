@@ -7,7 +7,9 @@ const { startLeaderboardLoop } = require('./leaderboard');
 const { hasApiKey } = require('./utils/henrik');
 const { runSeed } = require('./seed');
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+});
 client.commands = new Collection();
 
 const commandsPath = path.join(__dirname, 'commands');
@@ -41,6 +43,15 @@ client.once(Events.ClientReady, async (c) => {
   }
 
   startLeaderboardLoop(c);
+});
+
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author?.bot) return;
+  if (!process.env.LEADERBOARD_CHANNEL_ID) return;
+  if (message.channelId !== process.env.LEADERBOARD_CHANNEL_ID) return;
+  setTimeout(() => {
+    message.delete().catch(() => {});
+  }, 10000);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {

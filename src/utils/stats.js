@@ -23,6 +23,25 @@ function rrLostToday(mmrHistory) {
   return { lost, gained, net: gained - lost, games };
 }
 
+function extractPlayers(match) {
+  if (Array.isArray(match?.players)) return match.players;
+  if (Array.isArray(match?.players?.all_players)) return match.players.all_players;
+  return [];
+}
+
+function didTeamWin(match, teamId) {
+  if (!teamId) return false;
+  const key = String(teamId).toLowerCase();
+  if (Array.isArray(match?.teams)) {
+    const team = match.teams.find((t) => String(t.team_id || t.team || '').toLowerCase() === key);
+    return team?.won === true;
+  }
+  if (match?.teams && typeof match.teams === 'object') {
+    return match.teams[key]?.has_won === true || match.teams[key]?.won === true;
+  }
+  return false;
+}
+
 function winrateAndHs(matches, puuid) {
   if (!Array.isArray(matches) || matches.length === 0) {
     return { winrate: 0, hs: 0, wins: 0, losses: 0, games: 0 };
@@ -35,15 +54,13 @@ function winrateAndHs(matches, puuid) {
   let games = 0;
 
   for (const match of matches) {
-    const players = match?.players?.all_players || [];
+    const players = extractPlayers(match);
     const me = players.find((p) => p.puuid === puuid);
     if (!me) continue;
     games += 1;
 
-    const myTeam = (me.team || '').toLowerCase();
-    const teams = match?.teams || {};
-    const myTeamData = teams[myTeam];
-    if (myTeamData?.has_won === true) wins += 1;
+    const myTeam = me.team_id || me.team;
+    if (didTeamWin(match, myTeam)) wins += 1;
     else losses += 1;
 
     const s = me.stats || {};

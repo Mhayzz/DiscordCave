@@ -86,7 +86,7 @@ async function getMmrHistory(region, name, tag) {
 }
 
 async function getMatches(region, name, tag, mode = 'competitive', size = 20) {
-  const url = `${BASE_URL}/valorant/v3/matches/${region}/pc/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?mode=${mode}&size=${size}`;
+  const url = `${BASE_URL}/valorant/v4/matches/${region}/pc/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?mode=${mode}&size=${size}`;
   const data = await call(url);
   return data.data || [];
 }
