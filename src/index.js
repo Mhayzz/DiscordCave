@@ -3,6 +3,7 @@ const { Client, Collection, GatewayIntentBits, Events } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const { deployCommands } = require('./deploy-commands');
+const { startLeaderboardLoop } = require('./leaderboard');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
@@ -27,6 +28,8 @@ client.once(Events.ClientReady, async (c) => {
       console.error('Echec du deploiement des commandes au demarrage:', err.message);
     }
   }
+
+  startLeaderboardLoop(c);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
