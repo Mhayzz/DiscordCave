@@ -55,9 +55,9 @@ module.exports = {
       const { name, tag, region, puuid } = linked;
 
       const [mmr, mmrHistory, matches] = await Promise.all([
-        getMmr(region, name, tag).catch(() => null),
-        getMmrHistory(region, name, tag).catch(() => []),
-        getMatches(region, name, tag, 'competitive', 20).catch(() => []),
+        getMmr(region, name, tag).catch((e) => { console.warn('[stats] mmr:', e.message); return null; }),
+        getMmrHistory(region, name, tag).catch((e) => { console.warn('[stats] history:', e.message); return []; }),
+        getMatches(region, name, tag, 'competitive', 20).catch((e) => { console.warn('[stats] matches:', e.message); return []; }),
       ]);
 
       const current = mmr?.current_data || mmr?.current || {};

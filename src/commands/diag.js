@@ -72,8 +72,8 @@ module.exports = {
         const mmr = await rawCall(`${BASE_URL}/valorant/v3/mmr/${region}/pc/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
         lines.push(`• MMR v3 (${region}/pc) : ${summarize(mmr)}`);
 
-        const matches = await rawCall(`${BASE_URL}/valorant/v3/matches/${region}/pc/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?size=1&mode=competitive`);
-        lines.push(`• Matches v3 (${region}/pc) : ${summarize(matches)}`);
+        const matches = await rawCall(`${BASE_URL}/valorant/v4/matches/${region}/pc/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?size=1&mode=competitive`);
+        lines.push(`• Matches v4 (${region}/pc) : ${summarize(matches)}`);
 
         const history = await rawCall(`${BASE_URL}/valorant/v1/mmr-history/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
         lines.push(`• MMR history v1 : ${summarize(history)}`);
