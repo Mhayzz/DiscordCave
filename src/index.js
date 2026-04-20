@@ -1,0 +1,45 @@
+require('dotenv').config();
+const { Client, Collection, GatewayIntentBits, Events } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+client.commands = new Collection();
+
+const commandsPath = path.join(__dirname, 'commands');
+for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith('.js'))) {
+  const command = require(path.join(commandsPath, file));
+  if (command?.data && command?.execute) {
+    client.commands.set(command.data.name, command);
+  }
+}
+
+client.once(Events.ClientReady, (c) => {
+  console.log(`DiscordCave en ligne: ${c.user.tag}`);
+  c.user.setActivity('Valorant | /stats', { type: 0 });
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute(interaction);
+  } catch (err) {
+    console.error(`Erreur dans /${interaction.commandName}:`, err);
+    const payload = { content: 'Une erreur est survenue lors de l\'execution de la commande.', ephemeral: true };
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp(payload).catch(() => {});
+    } else {
+      await interaction.reply(payload).catch(() => {});
+    }
+  }
+});
+
+if (!process.env.DISCORD_TOKEN) {
+  console.error('DISCORD_TOKEN manquant dans .env');
+  process.exit(1);
+}
+
+client.login(process.env.DISCORD_TOKEN);
