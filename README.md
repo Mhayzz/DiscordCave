@@ -9,12 +9,17 @@ Bot Discord Valorant qui affiche **rank + RR**, **winrate %**, **HS %** et les *
 | `/link <riot_id> <tag>` | Lie ton compte Valorant à ton Discord (ex: `/link Toxo 6969`) |
 | `/stats [membre]` | Affiche tes stats (ou celles d'un autre membre du serveur) |
 | `/unlink` | Délie ton compte Valorant |
+| `/leaderboard` | Force la mise à jour du classement du serveur |
 
 L'embed `/stats` montre :
 - Rank actuel + RR
 - Peak rank et région
 - Winrate % et HS % sur les 20 dernières parties compétitives
 - RR gagnés / perdus / net du jour (UTC)
+
+## Classement du serveur
+
+Si `LEADERBOARD_CHANNEL_ID` est défini, le bot poste un embed de classement (trié par elo) dans ce salon et le réédite automatiquement toutes les `LEADERBOARD_UPDATE_MINUTES` minutes (défaut 15). Pas de spam : un seul message qui se met à jour.
 
 ## Installation
 
@@ -60,6 +65,8 @@ Dans le Developer Portal, active au moins :
    - `GUILD_ID` *(optionnel)* — pour déployer les commandes sur un seul serveur
    - `HENRIK_API_KEY` *(optionnel)* — clé API HenrikDev
    - `DEPLOY_COMMANDS_ON_START=true` — réenregistre automatiquement les slash commands à chaque démarrage (plus besoin de `npm run deploy` à la main)
+   - `LEADERBOARD_CHANNEL_ID` *(optionnel)* — ID du salon où le classement s'affichera et s'auto-mettra à jour
+   - `LEADERBOARD_UPDATE_MINUTES` *(défaut 15)* — fréquence de rafraîchissement
 4. Onglet **Settings → Volumes** → **New Volume** monté sur `/data`. Railway expose `RAILWAY_VOLUME_MOUNT_PATH=/data` que le bot détecte pour stocker `users.json` de manière persistante (sinon les comptes liés sont perdus à chaque redeploy).
 5. Railway détecte Node.js via `package.json`, build avec Nixpacks et lance `npm start`. `railway.json` fixe la politique de redémarrage.
 6. Vérifie les **Logs** : tu dois voir `DiscordCave en ligne: <bot>#0000` puis `X commande(s) deployee(s)`.

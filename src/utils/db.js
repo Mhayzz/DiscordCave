@@ -19,9 +19,12 @@ function readDb() {
   ensureDb();
   const raw = fs.readFileSync(DB_FILE, 'utf8');
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!parsed.users) parsed.users = {};
+    if (!parsed.meta) parsed.meta = {};
+    return parsed;
   } catch {
-    return { users: {} };
+    return { users: {}, meta: {} };
   }
 }
 
@@ -55,4 +58,21 @@ function unlinkUser(discordId) {
   return true;
 }
 
-module.exports = { linkUser, getUser, unlinkUser };
+function getAllUsers() {
+  const db = readDb();
+  return Object.entries(db.users).map(([discordId, u]) => ({ discordId, ...u }));
+}
+
+function getMeta(key) {
+  const db = readDb();
+  return db.meta?.[key];
+}
+
+function setMeta(key, value) {
+  const db = readDb();
+  if (!db.meta) db.meta = {};
+  db.meta[key] = value;
+  writeDb(db);
+}
+
+module.exports = { linkUser, getUser, unlinkUser, getAllUsers, getMeta, setMeta };
