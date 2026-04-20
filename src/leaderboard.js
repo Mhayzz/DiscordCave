@@ -2,6 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const { getAllAccounts, getMeta, setMeta } = require('./utils/db');
 const { getMmr, getMmrHistory } = require('./utils/henrik');
 const { rrLostToday } = require('./utils/stats');
+const { updateHelpMessage } = require('./help');
 
 const META_KEY = 'leaderboardMessageId';
 
@@ -144,6 +145,8 @@ async function updateLeaderboard(client, channelId) {
   if (channel.guild) {
     await channel.guild.emojis.fetch().catch(() => {});
   }
+
+  await updateHelpMessage(channel).catch((e) => console.error('[help]', e.message));
 
   const embed = await buildLeaderboardEmbed(channel.guild || null);
   const existingId = getMeta(META_KEY);
