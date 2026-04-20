@@ -47,15 +47,18 @@ module.exports = {
 
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
-      const status = err.response?.status;
+      const status = err.status;
       if (status === 404) {
-        return interaction.editReply('Compte Riot introuvable. Verifie le pseudo et le tag.');
+        return interaction.editReply(`Compte Riot \`${name}#${tag}\` introuvable. Verifie le pseudo et le tag (sans le #).`);
       }
       if (status === 429) {
         return interaction.editReply('Trop de requetes vers l\'API Valorant. Reessaie dans quelques secondes.');
       }
-      console.error('link error', err.message);
-      return interaction.editReply('Erreur lors de la liaison du compte. Reessaie plus tard.');
+      if (status === 401 || status === 403) {
+        return interaction.editReply('L\'API HenrikDev refuse l\'acces. L\'admin doit configurer `HENRIK_API_KEY` (https://docs.henrikdev.xyz/).');
+      }
+      console.error('link error', err);
+      return interaction.editReply(`Erreur API: \`${err.message}\``);
     }
   },
 };
