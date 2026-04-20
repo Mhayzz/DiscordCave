@@ -11,7 +11,8 @@ module.exports = {
 
     const channelId = process.env.LEADERBOARD_CHANNEL_ID;
     if (!channelId) {
-      const embed = await buildLeaderboardEmbed();
+      if (interaction.guild) await interaction.guild.emojis.fetch().catch(() => {});
+      const embed = await buildLeaderboardEmbed(interaction.guild || null);
       return interaction.editReply({ embeds: [embed] });
     }
 
