@@ -63,18 +63,11 @@ module.exports = {
       await interaction.editReply({ embeds: [embed] });
       refreshLeaderboardSoon(interaction.client);
     } catch (err) {
-      const status = err.status;
-      if (status === 404) {
+      if (err.status === 404) {
         return interaction.editReply(`Compte Riot \`${name}#${tag}\` introuvable. Vérifie le pseudo et le tag exacts (sans le #).`);
       }
-      if (status === 429) {
-        return interaction.editReply('Trop de requêtes vers l\'API Valorant. Réessaie dans quelques secondes.');
-      }
-      if (status === 401 || status === 403) {
-        return interaction.editReply('L\'API HenrikDev refuse l\'accès. L\'admin doit configurer `HENRIK_API_KEY` (https://docs.henrikdev.xyz/).');
-      }
       console.error('[link]', err);
-      return interaction.editReply(`Erreur API : \`${err.message}\``);
+      return interaction.editReply(`Erreur lors du lien : ${err.message}`);
     }
   },
 };

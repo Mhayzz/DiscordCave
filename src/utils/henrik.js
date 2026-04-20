@@ -2,31 +2,70 @@ const axios = require('axios');
 
 const BASE_URL = 'https://api.henrikdev.xyz';
 
-function headers() {
-  const h = { 'Accept': 'application/json' };
-  if (process.env.HENRIK_API_KEY) {
-    h['Authorization'] = process.env.HENRIK_API_KEY;
-  }
+function hasApiKey() {
+  return Boolean(process.env.HENRIK_API_KEY);
+}
+
+function buildHeaders() {
+  const h = { Accept: 'application/json', 'User-Agent': 'DiscordCave-Bot/1.0' };
+  if (hasApiKey()) h.Authorization = process.env.HENRIK_API_KEY;
   return h;
+}
+
+function extractErrorMessage(body) {
+  if (!body) return null;
+  const err = Array.isArray(body.errors) ? body.errors[0] : null;
+  if (err) {
+    if (err.details) return err.details;
+    if (err.message && err.message !== 'Received one or more errors') return err.message;
+    if (err.code) return `code ${err.code}`;
+  }
+  if (body.error) return body.error;
+  if (typeof body.message === 'string') return body.message;
+  if (typeof body.status === 'string') return body.status;
+  return null;
 }
 
 async function call(url) {
   try {
-    const { data } = await axios.get(url, { headers: headers(), timeout: 15000 });
+    const { data } = await axios.get(url, { headers: buildHeaders(), timeout: 15000 });
     return data;
   } catch (err) {
     const status = err.response?.status;
     const body = err.response?.data;
-    const apiMsg = body?.errors?.[0]?.details
-      || body?.errors?.[0]?.message
-      || body?.message
-      || (typeof body?.status === 'string' ? body.status : null)
-      || err.message;
-    const detail = `[Henrik ${status || 'NO_STATUS'}] ${apiMsg}`;
-    console.error(`API call failed: ${url} -> ${detail}`, body || '');
-    const wrapped = new Error(detail);
+
+    console.error('[Henrik] FAILED', {
+      url,
+      status,
+      hasApiKey: hasApiKey(),
+      body: typeof body === 'object' ? JSON.stringify(body).slice(0, 400) : String(body).slice(0, 400),
+    });
+
+    const apiMsg = extractErrorMessage(body);
+    let friendly;
+    if (status === 401 || status === 403) {
+      friendly = hasApiKey()
+        ? `clé API HenrikDev invalide ou manquant les permissions (${status})`
+        : `clé API HenrikDev requise — demande-la sur https://docs.henrikdev.xyz/ et configure HENRIK_API_KEY (${status})`;
+    } else if (status === 404) {
+      friendly = apiMsg || 'compte Riot introuvable';
+    } else if (status === 429) {
+      friendly = 'rate limit dépassé, réessaie dans quelques secondes';
+    } else if (status >= 500) {
+      friendly = apiMsg || `l'API HenrikDev est indisponible (${status})`;
+    } else if (apiMsg === 'Received one or more errors' || !apiMsg) {
+      friendly = hasApiKey()
+        ? `erreur API générique (${status || '?'}), voir logs Railway`
+        : 'clé API HenrikDev requise (HENRIK_API_KEY non configurée)';
+    } else {
+      friendly = apiMsg;
+    }
+
+    const wrapped = new Error(friendly);
     wrapped.status = status;
     wrapped.body = body;
+    wrapped.url = url;
+    wrapped.apiMsg = apiMsg;
     throw wrapped;
   }
 }
@@ -42,13 +81,19 @@ async function getMmr(region, name, tag) {
 }
 
 async function getMmrHistory(region, name, tag) {
-  const data = await call(`${BASE_URL}/valorant/v2/mmr-history/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
+  const data = await call(`${BASE_URL}/valorant/v1/mmr-history/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
   return data.data || [];
 }
 
 async function getMatches(region, name, tag, mode = 'competitive', size = 20) {
-  const data = await call(`${BASE_URL}/valorant/v3/matches/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?filter=${mode}&size=${size}`);
+  const url = `${BASE_URL}/valorant/v3/matches/${region}/pc/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?mode=${mode}&size=${size}`;
+  const data = await call(url);
   return data.data || [];
 }
 
-module.exports = { getAccount, getMmr, getMmrHistory, getMatches };
+async function ping() {
+  const data = await call(`${BASE_URL}/valorant/v1/status/eu`);
+  return data;
+}
+
+module.exports = { getAccount, getMmr, getMmrHistory, getMatches, ping, hasApiKey };
