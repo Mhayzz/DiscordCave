@@ -8,7 +8,11 @@ const { hasApiKey } = require('./utils/henrik');
 const { runSeed } = require('./seed');
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
+  ],
 });
 client.commands = new Collection();
 
@@ -86,7 +90,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.replied || interaction.deferred) {
     setTimeout(() => {
       interaction.deleteReply().catch(() => {});
-    }, 10000);
+    }, 30000);
   }
 });
 
