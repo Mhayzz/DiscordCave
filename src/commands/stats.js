@@ -110,15 +110,8 @@ module.exports = {
 
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
-      const status = err.status;
-      if (status === 429) {
-        return interaction.editReply('Trop de requêtes vers l\'API Valorant. Réessaie dans quelques secondes.');
-      }
-      if (status === 401 || status === 403) {
-        return interaction.editReply('L\'API HenrikDev refuse l\'accès. L\'admin doit configurer `HENRIK_API_KEY`.');
-      }
       console.error('[stats]', err);
-      return interaction.editReply(`Erreur API : \`${err.message}\``);
+      return interaction.editReply(`Erreur lors de la récupération des stats : ${err.message}`);
     }
   },
 };

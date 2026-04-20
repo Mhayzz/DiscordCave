@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { deployCommands } = require('./deploy-commands');
 const { startLeaderboardLoop } = require('./leaderboard');
+const { hasApiKey } = require('./utils/henrik');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
@@ -17,7 +18,10 @@ for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith('.js'))
 }
 
 client.once(Events.ClientReady, async (c) => {
-  console.log(`DiscordCave en ligne: ${c.user.tag}`);
+  console.log(`✅ DiscordCave en ligne : ${c.user.tag}`);
+  console.log(`   HENRIK_API_KEY : ${hasApiKey() ? '✅ configurée' : '❌ MANQUANTE (demande une clé sur https://docs.henrikdev.xyz/)'}`);
+  console.log(`   LEADERBOARD_CHANNEL_ID : ${process.env.LEADERBOARD_CHANNEL_ID || '❌ non défini'}`);
+  console.log(`   Commandes chargées : ${client.commands.size} (${[...client.commands.keys()].join(', ')})`);
   c.user.setActivity('Valorant | /stats', { type: 0 });
 
   if (process.env.DEPLOY_COMMANDS_ON_START === 'true') {
