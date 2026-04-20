@@ -5,6 +5,7 @@ const path = require('path');
 const { deployCommands } = require('./deploy-commands');
 const { startLeaderboardLoop } = require('./leaderboard');
 const { hasApiKey } = require('./utils/henrik');
+const { runSeed } = require('./seed');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
@@ -31,6 +32,12 @@ client.once(Events.ClientReady, async (c) => {
     } catch (err) {
       console.error('Echec du deploiement des commandes au demarrage:', err.message);
     }
+  }
+
+  try {
+    await runSeed();
+  } catch (err) {
+    console.error('[seed] erreur globale:', err.message);
   }
 
   startLeaderboardLoop(c);
