@@ -2,6 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const { getAllAccounts, getMeta, setMeta } = require('./utils/db');
 const { getMmr, getMmrHistory } = require('./utils/henrik');
 const { rrLostToday } = require('./utils/stats');
+const { ensureRankRoles, syncMemberRank } = require('./roles');
 
 const META_KEY = 'leaderboardMessageId';
 const HELP_META = 'helpMessageId';
@@ -138,6 +139,23 @@ async function buildLeaderboardEmbed(guild = null) {
     .setTimestamp();
 }
 
+async function syncAllRankRoles(guild) {
+  const accounts = getAllAccounts();
+  const enriched = await Promise.all(accounts.map(fetchAccountDetails));
+  const userBest = new Map();
+  for (const acc of enriched) {
+    if (!acc.ok) continue;
+    const prev = userBest.get(acc.discordId);
+    if (!prev || acc.elo > prev.elo) userBest.set(acc.discordId, acc);
+  }
+  if (userBest.size === 0) return;
+
+  const { roles: rolesMap } = await ensureRankRoles(guild);
+  for (const [discordId, acc] of userBest) {
+    await syncMemberRank(guild, discordId, acc.rankName, rolesMap).catch(() => {});
+  }
+}
+
 async function cleanupOldHelpMessage(channel) {
   const helpId = getMeta(HELP_META);
   if (!helpId) return;
@@ -159,6 +177,10 @@ async function updateLeaderboard(client, channelId) {
   }
 
   await cleanupOldHelpMessage(channel);
+
+  if (channel.guild) {
+    syncAllRankRoles(channel.guild).catch((e) => console.error('[ranks sync]', e.message));
+  }
 
   const embed = await buildLeaderboardEmbed(channel.guild || null);
   const existingId = getMeta(META_KEY);
