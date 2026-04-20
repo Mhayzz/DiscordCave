@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { removeAccount, getAccounts } = require('../utils/db');
+const { updateLeaderboard } = require('../leaderboard');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -38,5 +39,11 @@ module.exports = {
       ? `${result.removed} comptes delies.`
       : `Compte delie. Il te reste ${result.remaining} compte(s) lie(s).`;
     await interaction.reply({ content: msg, ephemeral: true });
+
+    const channelId = process.env.LEADERBOARD_CHANNEL_ID;
+    if (channelId) {
+      updateLeaderboard(interaction.client, channelId)
+        .catch((e) => console.error('[leaderboard] refresh after unlink', e.message));
+    }
   },
 };

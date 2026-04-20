@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getAccount } = require('../utils/henrik');
 const { addAccount, MAX_ACCOUNTS } = require('../utils/db');
+const { updateLeaderboard } = require('../leaderboard');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -16,8 +17,8 @@ module.exports = {
         .setRequired(true)),
 
   async execute(interaction) {
-    const name = interaction.options.getString('riot_id');
-    const tag = interaction.options.getString('tag').replace(/^#/, '');
+    const name = interaction.options.getString('riot_id').replace(/^#/, '').trim();
+    const tag = interaction.options.getString('tag').replace(/^#/, '').trim();
 
     await interaction.deferReply({ ephemeral: true });
 
@@ -54,6 +55,12 @@ module.exports = {
         .setFooter({ text: 'Utilise /stats pour voir tes statistiques' });
 
       await interaction.editReply({ embeds: [embed] });
+
+      const channelId = process.env.LEADERBOARD_CHANNEL_ID;
+      if (channelId) {
+        updateLeaderboard(interaction.client, channelId)
+          .catch((e) => console.error('[leaderboard] refresh after link', e.message));
+      }
     } catch (err) {
       const status = err.status;
       if (status === 404) {
