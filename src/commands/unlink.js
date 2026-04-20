@@ -1,14 +1,14 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { removeAccount, getAccounts } = require('../utils/db');
-const { updateLeaderboard } = require('../leaderboard');
+const { refreshLeaderboardSoon } = require('../leaderboard');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('unlink')
-    .setDescription('Delie un compte Valorant de ton Discord')
+    .setDescription('Délie un compte Valorant de ton Discord')
     .addStringOption((o) =>
       o.setName('compte')
-        .setDescription('Le compte a delier (format Pseudo#Tag). Vide = tout delier')
+        .setDescription('Le compte à délier (Pseudo#Tag). Vide = tout délier')
         .setRequired(false)
         .setAutocomplete(true)),
 
@@ -28,22 +28,18 @@ module.exports = {
     const accounts = getAccounts(interaction.user.id);
 
     if (accounts.length === 0) {
-      return interaction.reply({ content: 'Aucun compte Valorant n\'est lie.', ephemeral: true });
+      return interaction.reply({ content: 'Tu n\'as aucun compte Valorant lié.', ephemeral: true });
     }
 
     const result = removeAccount(interaction.user.id, riotId || null);
     if (result.removed === 0) {
-      return interaction.reply({ content: `Compte \`${riotId}\` non trouve dans tes liaisons.`, ephemeral: true });
+      return interaction.reply({ content: `Compte \`${riotId}\` introuvable dans tes liaisons.`, ephemeral: true });
     }
-    const msg = result.removed > 1
-      ? `${result.removed} comptes delies.`
-      : `Compte delie. Il te reste ${result.remaining} compte(s) lie(s).`;
-    await interaction.reply({ content: msg, ephemeral: true });
 
-    const channelId = process.env.LEADERBOARD_CHANNEL_ID;
-    if (channelId) {
-      updateLeaderboard(interaction.client, channelId)
-        .catch((e) => console.error('[leaderboard] refresh after unlink', e.message));
-    }
+    const msg = result.removed > 1
+      ? `${result.removed} comptes déliés.`
+      : `Compte délié. Il te reste ${result.remaining} compte(s) lié(s).`;
+    await interaction.reply({ content: msg, ephemeral: true });
+    refreshLeaderboardSoon(interaction.client);
   },
 };
