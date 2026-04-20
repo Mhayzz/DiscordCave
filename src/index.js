@@ -71,6 +71,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction.reply(payload).catch(() => {});
     }
   }
+
+  if (interaction.replied || interaction.deferred) {
+    setTimeout(() => {
+      interaction.deleteReply().catch(() => {});
+    }, 10000);
+  }
 });
 
 if (!process.env.DISCORD_TOKEN) {
