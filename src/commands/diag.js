@@ -62,8 +62,8 @@ module.exports = {
     const ping = await rawCall(`${BASE_URL}/valorant/v1/status/eu`);
     lines.push(`• Status EU : ${summarize(ping)}`);
 
-    const account = await rawCall(`${BASE_URL}/valorant/v2/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
-    lines.push(`• Account lookup \`${name}#${tag}\` : ${summarize(account)}`);
+    const account = await rawCall(`${BASE_URL}/valorant/v1/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
+    lines.push(`• Account lookup v1 \`${name}#${tag}\` : ${summarize(account)}`);
 
     if (account.status >= 200 && account.status < 300) {
       const region = account.body?.data?.region;
