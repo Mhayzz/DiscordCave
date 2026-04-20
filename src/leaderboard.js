@@ -1,6 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 const { getAllAccounts, getMeta, setMeta } = require('./utils/db');
-const { getMmr } = require('./utils/henrik');
+const { getMmr, getMmrHistory } = require('./utils/henrik');
+const { rrLostToday } = require('./utils/stats');
 
 const META_KEY = 'leaderboardMessageId';
 
@@ -30,9 +31,12 @@ function getRankEmoji(guild, rankName) {
   return TIER_EMOJI_FALLBACK[key] || '▫️';
 }
 
-async function fetchAccountMmr(account) {
+async function fetchAccountDetails(account) {
   try {
-    const mmr = await getMmr(account.region, account.name, account.tag);
+    const [mmr, history] = await Promise.all([
+      getMmr(account.region, account.name, account.tag),
+      getMmrHistory(account.region, account.name, account.tag).catch(() => []),
+    ]);
     const current = mmr?.current_data || mmr?.current || {};
     const peak = mmr?.highest_rank || mmr?.peak || {};
     return {
@@ -42,29 +46,32 @@ async function fetchAccountMmr(account) {
       rr: current.ranking_in_tier ?? current.rr ?? 0,
       elo: current.elo ?? 0,
       peakName: peak.patched_tier || peak.tier?.name || peak.tier || null,
+      day: rrLostToday(history),
     };
   } catch {
-    return { ...account, ok: false, rankName: 'N/A', rr: 0, elo: -1, peakName: null };
+    return {
+      ...account,
+      ok: false,
+      rankName: 'N/A',
+      rr: 0,
+      elo: -1,
+      peakName: null,
+      day: { games: 0, net: 0, gained: 0, lost: 0 },
+    };
   }
 }
 
-function groupByUser(enriched) {
-  const byUser = new Map();
-  for (const a of enriched) {
-    if (!byUser.has(a.discordId)) byUser.set(a.discordId, []);
-    byUser.get(a.discordId).push(a);
-  }
-  const groups = [];
-  for (const [discordId, accounts] of byUser) {
-    const valid = accounts.filter((a) => a.ok);
-    if (valid.length === 0) {
-      groups.push({ discordId, best: null, others: accounts });
-      continue;
-    }
-    valid.sort((a, b) => b.elo - a.elo);
-    groups.push({ discordId, best: valid[0], others: valid.slice(1) });
-  }
-  return groups;
+function formatDay(day) {
+  if (!day || day.games === 0) return '';
+  const sign = day.net > 0 ? '📈 +' : day.net < 0 ? '📉 ' : '➖ ';
+  return ` · ${sign}${day.net} RR`;
+}
+
+function positionBadge(i) {
+  if (i === 0) return '🥇';
+  if (i === 1) return '🥈';
+  if (i === 2) return '🥉';
+  return `\`#${String(i + 1).padStart(2, '0')}\``;
 }
 
 async function buildLeaderboardEmbed(guild = null) {
@@ -73,37 +80,58 @@ async function buildLeaderboardEmbed(guild = null) {
     return new EmbedBuilder()
       .setColor(0xff4655)
       .setTitle('🎯 Classement Valorant')
-      .setDescription('Aucun joueur lié pour le moment.\nUtilisez `/link` pour participer !')
+      .setDescription('Aucun joueur lié pour le moment.\nUtilise `/link riot_id tag` pour participer !')
       .setTimestamp();
   }
 
-  const enriched = await Promise.all(accounts.map(fetchAccountMmr));
-  const groups = groupByUser(enriched);
+  const enriched = await Promise.all(accounts.map(fetchAccountDetails));
 
-  const ranked = groups.filter((g) => g.best).sort((a, b) => b.best.elo - a.best.elo);
-  const errored = groups.filter((g) => !g.best);
+  const userBest = new Map();
+  for (const acc of enriched) {
+    if (!acc.ok) continue;
+    const prev = userBest.get(acc.discordId);
+    if (!prev || acc.elo > prev.elo) userBest.set(acc.discordId, acc);
+  }
 
-  const medals = ['🥇', '🥈', '🥉'];
-  const lines = ranked.map((g, i) => {
-    const prefix = medals[i] || `\`#${String(i + 1).padStart(2, '0')}\``;
-    const emoji = getRankEmoji(guild, g.best.rankName);
-    const altsNote = g.others.length > 0
-      ? ` *+${g.others.length} alt*`
-      : '';
-    return `${prefix} ${emoji} <@${g.discordId}> — **${g.best.rankName}** \`${g.best.rr} RR\` · \`${g.best.name}#${g.best.tag}\`${altsNote}`;
+  const ranked = enriched
+    .filter((a) => a.ok)
+    .sort((a, b) => b.elo - a.elo);
+  const errored = enriched.filter((a) => !a.ok);
+
+  const lines = [];
+  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  ranked.forEach((acc, i) => {
+    const badge = positionBadge(i);
+    const emoji = getRankEmoji(guild, acc.rankName);
+    const isAlt = userBest.get(acc.discordId) !== acc;
+    const altTag = isAlt ? ' 🔄' : '';
+    const peak = acc.peakName ? `_peak ${acc.peakName}_` : '';
+    const dayStr = formatDay(acc.day);
+
+    lines.push(`${badge} ${emoji} **${acc.rankName}** · \`${acc.rr} RR\`${dayStr}`);
+    lines.push(`┗ <@${acc.discordId}>${altTag} · \`${acc.name}#${acc.tag}\` · ${peak}`);
+    lines.push('');
   });
 
   if (errored.length > 0) {
-    lines.push('');
-    lines.push(`*${errored.length} joueur(s) avec compte introuvable ou erreur API*`);
+    lines.push(`⚠️ *${errored.length} compte(s) introuvable(s) ou en erreur API*`);
+    for (const e of errored) {
+      lines.push(`• <@${e.discordId}> · \`${e.name}#${e.tag}\``);
+    }
   }
 
-  return new EmbedBuilder()
+  const totalUsers = userBest.size;
+  const totalAccounts = ranked.length;
+
+  const embed = new EmbedBuilder()
     .setColor(0xff4655)
-    .setTitle('🎯 Classement Valorant')
-    .setDescription(lines.join('\n'))
-    .setFooter({ text: `${ranked.length} joueur(s) classé(s) · auto-update` })
+    .setTitle('🎯 CLASSEMENT VALORANT')
+    .setDescription(lines.join('\n').slice(0, 4000))
+    .setFooter({ text: `${totalUsers} joueur(s) · ${totalAccounts} compte(s) · auto-update` })
     .setTimestamp();
+
+  return embed;
 }
 
 async function updateLeaderboard(client, channelId) {
