@@ -106,11 +106,12 @@ async function buildLeaderboardEmbed(guild = null) {
     const emoji = getRankEmoji(guild, acc.rankName);
     const isAlt = userBest.get(acc.discordId) !== acc;
     const altTag = isAlt ? ' 🔄' : '';
-    const peak = acc.peakName ? `_peak ${acc.peakName}_` : '';
+    const peakEmoji = acc.peakName ? getRankEmoji(guild, acc.peakName) : '';
+    const peakStr = peakEmoji ? ` · peak ${peakEmoji}` : '';
     const dayStr = formatDay(acc.day);
 
     lines.push(`${badge} ${emoji} **${acc.rankName}** · \`${acc.rr} RR\`${dayStr}`);
-    lines.push(`┗ <@${acc.discordId}>${altTag} · \`${acc.name}#${acc.tag}\` · ${peak}`);
+    lines.push(`┗ <@${acc.discordId}>${altTag} · \`${acc.name}#${acc.tag}\`${peakStr}`);
     lines.push('');
   });
 
