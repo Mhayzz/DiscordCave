@@ -148,6 +148,18 @@ async function updateLeaderboard(client, channelId) {
 
   await updateHelpMessage(channel).catch((e) => console.error('[help]', e.message));
 
+  const helpId = getMeta('helpMessageId');
+  const lbId = getMeta(META_KEY);
+  if (helpId && lbId) {
+    try {
+      if (BigInt(helpId) > BigInt(lbId)) {
+        const oldLb = await channel.messages.fetch(lbId).catch(() => null);
+        if (oldLb) await oldLb.delete().catch(() => {});
+        setMeta(META_KEY, null);
+      }
+    } catch {}
+  }
+
   const embed = await buildLeaderboardEmbed(channel.guild || null);
   const existingId = getMeta(META_KEY);
 
