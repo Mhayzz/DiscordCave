@@ -4,15 +4,30 @@ const { getMmr } = require('./utils/henrik');
 
 const META_KEY = 'leaderboardMessageId';
 
-const TIER_EMOJI = {
+const TIER_EMOJI_FALLBACK = {
   iron: '⚫', bronze: '🟤', silver: '⚪', gold: '🟡',
   platinum: '🔵', diamond: '💠', ascendant: '🟢',
   immortal: '🔴', radiant: '🌟',
 };
 
-function tierEmoji(rankName = '') {
-  const key = rankName.toLowerCase().split(' ')[0];
-  return TIER_EMOJI[key] || '▫️';
+function rankToEmojiName(rankName) {
+  if (!rankName) return null;
+  const n = rankName.trim();
+  if (/^radiant$/i.test(n)) return 'Radiant_Rank';
+  const m = n.match(/^(Iron|Bronze|Silver|Gold|Platinum|Diamond|Ascendant|Immortal)\s*(\d)$/i);
+  if (!m) return null;
+  const tier = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
+  return `${tier}_${m[2]}_Rank`;
+}
+
+function getRankEmoji(guild, rankName) {
+  const customName = rankToEmojiName(rankName);
+  if (guild && customName) {
+    const emoji = guild.emojis.cache.find((e) => e.name === customName);
+    if (emoji) return emoji.toString();
+  }
+  const key = (rankName || '').toLowerCase().split(' ')[0];
+  return TIER_EMOJI_FALLBACK[key] || '▫️';
 }
 
 async function fetchAccountMmr(account) {
@@ -52,7 +67,7 @@ function groupByUser(enriched) {
   return groups;
 }
 
-async function buildLeaderboardEmbed() {
+async function buildLeaderboardEmbed(guild = null) {
   const accounts = getAllAccounts();
   if (accounts.length === 0) {
     return new EmbedBuilder()
@@ -71,7 +86,7 @@ async function buildLeaderboardEmbed() {
   const medals = ['🥇', '🥈', '🥉'];
   const lines = ranked.map((g, i) => {
     const prefix = medals[i] || `\`#${String(i + 1).padStart(2, '0')}\``;
-    const emoji = tierEmoji(g.best.rankName);
+    const emoji = getRankEmoji(guild, g.best.rankName);
     const altsNote = g.others.length > 0
       ? ` *+${g.others.length} alt*`
       : '';
@@ -99,7 +114,11 @@ async function updateLeaderboard(client, channelId) {
     return;
   }
 
-  const embed = await buildLeaderboardEmbed();
+  if (channel.guild) {
+    await channel.guild.emojis.fetch().catch(() => {});
+  }
+
+  const embed = await buildLeaderboardEmbed(channel.guild || null);
   const existingId = getMeta(META_KEY);
 
   if (existingId) {
