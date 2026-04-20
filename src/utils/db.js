@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const MAX_ACCOUNTS = 3;
+
 const DATA_DIR = process.env.DATA_DIR
   || process.env.RAILWAY_VOLUME_MOUNT_PATH
   || path.join(__dirname, '..', '..', 'data');
@@ -11,21 +13,33 @@ function ensureDb() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify({ users: {} }, null, 2));
+    fs.writeFileSync(DB_FILE, JSON.stringify({ users: {}, meta: {} }, null, 2));
   }
+}
+
+function migrateEntry(entry) {
+  if (Array.isArray(entry)) return entry;
+  if (entry && typeof entry === 'object' && entry.name && entry.tag) {
+    return [entry];
+  }
+  return [];
 }
 
 function readDb() {
   ensureDb();
   const raw = fs.readFileSync(DB_FILE, 'utf8');
+  let parsed;
   try {
-    const parsed = JSON.parse(raw);
-    if (!parsed.users) parsed.users = {};
-    if (!parsed.meta) parsed.meta = {};
-    return parsed;
+    parsed = JSON.parse(raw);
   } catch {
-    return { users: {}, meta: {} };
+    parsed = { users: {}, meta: {} };
   }
+  if (!parsed.users) parsed.users = {};
+  if (!parsed.meta) parsed.meta = {};
+  for (const id of Object.keys(parsed.users)) {
+    parsed.users[id] = migrateEntry(parsed.users[id]);
+  }
+  return parsed;
 }
 
 function writeDb(db) {
@@ -33,34 +47,72 @@ function writeDb(db) {
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
-function linkUser(discordId, { name, tag, region, puuid }) {
+function sameAccount(a, b) {
+  return a.name.toLowerCase() === b.name.toLowerCase()
+    && a.tag.toLowerCase() === b.tag.toLowerCase();
+}
+
+function addAccount(discordId, { name, tag, region, puuid }) {
   const db = readDb();
-  db.users[discordId] = {
-    name,
-    tag,
-    region,
-    puuid,
-    linkedAt: new Date().toISOString(),
-  };
+  const list = db.users[discordId] || [];
+  if (list.some((a) => sameAccount(a, { name, tag }))) {
+    return { ok: false, reason: 'duplicate', total: list.length };
+  }
+  if (list.length >= MAX_ACCOUNTS) {
+    return { ok: false, reason: 'max', total: list.length };
+  }
+  list.push({ name, tag, region, puuid, linkedAt: new Date().toISOString() });
+  db.users[discordId] = list;
   writeDb(db);
+  return { ok: true, total: list.length };
 }
 
-function getUser(discordId) {
+function getAccounts(discordId) {
   const db = readDb();
-  return db.users[discordId] || null;
+  return db.users[discordId] || [];
 }
 
-function unlinkUser(discordId) {
+function getAccountByRiotId(discordId, riotId) {
+  const accounts = getAccounts(discordId);
+  if (!riotId) return accounts[0] || null;
+  const [name, tag] = riotId.split('#');
+  if (!name || !tag) return null;
+  return accounts.find((a) => sameAccount(a, { name, tag })) || null;
+}
+
+function removeAccount(discordId, riotId) {
   const db = readDb();
-  if (!db.users[discordId]) return false;
-  delete db.users[discordId];
+  const list = db.users[discordId] || [];
+  if (list.length === 0) return { removed: 0, remaining: 0 };
+
+  if (!riotId) {
+    delete db.users[discordId];
+    writeDb(db);
+    return { removed: list.length, remaining: 0 };
+  }
+
+  const [name, tag] = riotId.split('#');
+  if (!name || !tag) return { removed: 0, remaining: list.length };
+
+  const next = list.filter((a) => !sameAccount(a, { name, tag }));
+  const removed = list.length - next.length;
+  if (removed === 0) return { removed: 0, remaining: list.length };
+
+  if (next.length === 0) delete db.users[discordId];
+  else db.users[discordId] = next;
   writeDb(db);
-  return true;
+  return { removed, remaining: next.length };
 }
 
-function getAllUsers() {
+function getAllAccounts() {
   const db = readDb();
-  return Object.entries(db.users).map(([discordId, u]) => ({ discordId, ...u }));
+  const out = [];
+  for (const [discordId, list] of Object.entries(db.users)) {
+    for (const account of list) {
+      out.push({ discordId, ...account });
+    }
+  }
+  return out;
 }
 
 function getMeta(key) {
@@ -75,4 +127,13 @@ function setMeta(key, value) {
   writeDb(db);
 }
 
-module.exports = { linkUser, getUser, unlinkUser, getAllUsers, getMeta, setMeta };
+module.exports = {
+  MAX_ACCOUNTS,
+  addAccount,
+  getAccounts,
+  getAccountByRiotId,
+  removeAccount,
+  getAllAccounts,
+  getMeta,
+  setMeta,
+};

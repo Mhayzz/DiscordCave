@@ -1,11 +1,11 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getAccount } = require('../utils/henrik');
-const { linkUser } = require('../utils/db');
+const { addAccount, MAX_ACCOUNTS } = require('../utils/db');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('link')
-    .setDescription('Lie ton compte Valorant a ton compte Discord')
+    .setDescription(`Lie un compte Valorant a ton Discord (max ${MAX_ACCOUNTS})`)
     .addStringOption((o) =>
       o.setName('riot_id')
         .setDescription('Ton pseudo Riot (sans le #)')
@@ -27,12 +27,19 @@ module.exports = {
         return interaction.editReply('Compte Riot introuvable. Verifie ton pseudo et ton tag.');
       }
 
-      linkUser(interaction.user.id, {
+      const result = addAccount(interaction.user.id, {
         name: account.name,
         tag: account.tag,
         region: account.region,
         puuid: account.puuid,
       });
+
+      if (!result.ok && result.reason === 'duplicate') {
+        return interaction.editReply(`\`${account.name}#${account.tag}\` est deja lie a ton compte Discord.`);
+      }
+      if (!result.ok && result.reason === 'max') {
+        return interaction.editReply(`Tu as deja atteint le maximum de ${MAX_ACCOUNTS} comptes lies. Utilise \`/unlink\` pour en retirer un.`);
+      }
 
       const embed = new EmbedBuilder()
         .setColor(0xff4655)
@@ -41,6 +48,7 @@ module.exports = {
         .addFields(
           { name: 'Region', value: (account.region || 'N/A').toUpperCase(), inline: true },
           { name: 'Niveau', value: String(account.account_level ?? 'N/A'), inline: true },
+          { name: 'Comptes lies', value: `${result.total} / ${MAX_ACCOUNTS}`, inline: true },
         )
         .setThumbnail(account.card?.small || null)
         .setFooter({ text: 'Utilise /stats pour voir tes statistiques' });

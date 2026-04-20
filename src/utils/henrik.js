@@ -17,7 +17,11 @@ async function call(url) {
   } catch (err) {
     const status = err.response?.status;
     const body = err.response?.data;
-    const apiMsg = body?.errors?.[0]?.message || body?.message || body?.status || err.message;
+    const apiMsg = body?.errors?.[0]?.details
+      || body?.errors?.[0]?.message
+      || body?.message
+      || (typeof body?.status === 'string' ? body.status : null)
+      || err.message;
     const detail = `[Henrik ${status || 'NO_STATUS'}] ${apiMsg}`;
     console.error(`API call failed: ${url} -> ${detail}`, body || '');
     const wrapped = new Error(detail);

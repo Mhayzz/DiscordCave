@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const { getAllUsers, getMeta, setMeta } = require('./utils/db');
+const { getAllAccounts, getMeta, setMeta } = require('./utils/db');
 const { getMmr } = require('./utils/henrik');
 
 const META_KEY = 'leaderboardMessageId';
@@ -20,7 +20,7 @@ async function fetchUserMmr(user) {
 }
 
 async function buildLeaderboardEmbed() {
-  const users = getAllUsers();
+  const users = getAllAccounts();
   if (users.length === 0) {
     return new EmbedBuilder()
       .setColor(0xff4655)
