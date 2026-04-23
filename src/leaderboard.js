@@ -84,7 +84,7 @@ function positionBadge(i) {
   return `\`#${String(i + 1).padStart(2, '0')}\``;
 }
 
-async function buildLeaderboardEmbed(guild = null) {
+async function buildLeaderboardEmbed(guild = null, prefetched = null) {
   const accounts = getAllAccounts();
 
   if (accounts.length === 0) {
@@ -95,7 +95,7 @@ async function buildLeaderboardEmbed(guild = null) {
       .setTimestamp();
   }
 
-  const enriched = await Promise.all(accounts.map(fetchAccountDetails));
+  const enriched = prefetched || await Promise.all(accounts.map(fetchAccountDetails));
 
   const userBest = new Map();
   for (const acc of enriched) {
@@ -131,9 +131,9 @@ async function buildLeaderboardEmbed(guild = null) {
     .setTimestamp();
 }
 
-async function syncAllRankRoles(guild) {
+async function syncAllRankRoles(guild, prefetched = null) {
   const accounts = getAllAccounts();
-  const enriched = await Promise.all(accounts.map(fetchAccountDetails));
+  const enriched = prefetched || await Promise.all(accounts.map(fetchAccountDetails));
   const userBest = new Map();
   for (const acc of enriched) {
     if (acc.elo <= 0) continue;
@@ -170,11 +170,16 @@ async function updateLeaderboard(client, channelId) {
 
   await cleanupOldHelpMessage(channel);
 
-  if (channel.guild) {
-    syncAllRankRoles(channel.guild).catch((e) => console.error('[ranks sync]', e.message));
+  const accounts = getAllAccounts();
+  const enriched = accounts.length > 0
+    ? await Promise.all(accounts.map(fetchAccountDetails))
+    : [];
+
+  if (channel.guild && enriched.length > 0) {
+    syncAllRankRoles(channel.guild, enriched).catch((e) => console.error('[ranks sync]', e.message));
   }
 
-  const embed = await buildLeaderboardEmbed(channel.guild || null);
+  const embed = await buildLeaderboardEmbed(channel.guild || null, enriched);
   const existingId = getMeta(META_KEY);
 
   if (existingId) {
