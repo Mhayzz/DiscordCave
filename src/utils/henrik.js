@@ -2,6 +2,10 @@ const axios = require('axios');
 
 const BASE_URL = 'https://api.henrikdev.xyz';
 
+const MAX_CONCURRENT = Math.max(1, Number(process.env.HENRIK_MAX_CONCURRENT || 2));
+const CACHE_TTL_MS = Math.max(0, Number(process.env.HENRIK_CACHE_TTL_MS || 60_000));
+const MAX_RETRIES_429 = 3;
+
 function hasApiKey() {
   return Boolean(process.env.HENRIK_API_KEY);
 }
@@ -26,47 +30,121 @@ function extractErrorMessage(body) {
   return null;
 }
 
-async function call(url) {
+const cache = new Map();
+const inflight = new Map();
+const waiters = [];
+let active = 0;
+
+function acquireSlot() {
+  if (active < MAX_CONCURRENT) {
+    active += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => waiters.push(resolve));
+}
+
+function releaseSlot() {
+  const next = waiters.shift();
+  if (next) next();
+  else active -= 1;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function parseRetryAfter(headers) {
+  const raw = headers?.['retry-after'];
+  if (!raw) return null;
+  const n = Number(raw);
+  if (Number.isFinite(n)) return Math.max(0, n * 1000);
+  const when = Date.parse(raw);
+  if (Number.isFinite(when)) return Math.max(0, when - Date.now());
+  return null;
+}
+
+async function rawRequest(url) {
+  await acquireSlot();
   try {
     const { data } = await axios.get(url, { headers: buildHeaders(), timeout: 15000 });
     return data;
-  } catch (err) {
-    const status = err.response?.status;
-    const body = err.response?.data;
+  } finally {
+    releaseSlot();
+  }
+}
 
-    console.error('[Henrik] FAILED', {
-      url,
-      status,
-      hasApiKey: hasApiKey(),
-      body: typeof body === 'object' ? JSON.stringify(body).slice(0, 400) : String(body).slice(0, 400),
-    });
+async function call(url) {
+  const cached = cache.get(url);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
 
-    const apiMsg = extractErrorMessage(body);
-    let friendly;
-    if (status === 401 || status === 403) {
-      friendly = hasApiKey()
-        ? `clé API HenrikDev invalide ou manquant les permissions (${status})`
-        : `clé API HenrikDev requise — demande-la sur https://docs.henrikdev.xyz/ et configure HENRIK_API_KEY (${status})`;
-    } else if (status === 404) {
-      friendly = apiMsg || 'compte Riot introuvable';
-    } else if (status === 429) {
-      friendly = 'rate limit dépassé, réessaie dans quelques secondes';
-    } else if (status >= 500) {
-      friendly = apiMsg || `l'API HenrikDev est indisponible (${status})`;
-    } else if (apiMsg === 'Received one or more errors' || !apiMsg) {
-      friendly = hasApiKey()
-        ? `erreur API générique (${status || '?'}), voir logs Railway`
-        : 'clé API HenrikDev requise (HENRIK_API_KEY non configurée)';
-    } else {
-      friendly = apiMsg;
+  const existing = inflight.get(url);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    let attempt = 0;
+    while (true) {
+      try {
+        const data = await rawRequest(url);
+        if (CACHE_TTL_MS > 0) {
+          cache.set(url, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+        }
+        return data;
+      } catch (err) {
+        const status = err.response?.status;
+        const body = err.response?.data;
+
+        if (status === 429 && attempt < MAX_RETRIES_429) {
+          const retryAfterMs = parseRetryAfter(err.response?.headers);
+          const backoff = retryAfterMs ?? Math.min(15_000, 1000 * 2 ** attempt);
+          const jitter = Math.floor(Math.random() * 300);
+          console.warn(`[Henrik] 429 retry ${attempt + 1}/${MAX_RETRIES_429} in ${backoff + jitter}ms ${url}`);
+          await sleep(backoff + jitter);
+          attempt += 1;
+          continue;
+        }
+
+        console.error('[Henrik] FAILED', {
+          url,
+          status,
+          hasApiKey: hasApiKey(),
+          body: typeof body === 'object' ? JSON.stringify(body).slice(0, 400) : String(body).slice(0, 400),
+        });
+
+        const apiMsg = extractErrorMessage(body);
+        let friendly;
+        if (status === 401 || status === 403) {
+          friendly = hasApiKey()
+            ? `clé API HenrikDev invalide ou manquant les permissions (${status})`
+            : `clé API HenrikDev requise — demande-la sur https://docs.henrikdev.xyz/ et configure HENRIK_API_KEY (${status})`;
+        } else if (status === 404) {
+          friendly = apiMsg || 'compte Riot introuvable';
+        } else if (status === 429) {
+          friendly = 'rate limit dépassé, réessaie dans quelques secondes';
+        } else if (status >= 500) {
+          friendly = apiMsg || `l'API HenrikDev est indisponible (${status})`;
+        } else if (apiMsg === 'Received one or more errors' || !apiMsg) {
+          friendly = hasApiKey()
+            ? `erreur API générique (${status || '?'}), voir logs Railway`
+            : 'clé API HenrikDev requise (HENRIK_API_KEY non configurée)';
+        } else {
+          friendly = apiMsg;
+        }
+
+        const wrapped = new Error(friendly);
+        wrapped.status = status;
+        wrapped.body = body;
+        wrapped.url = url;
+        wrapped.apiMsg = apiMsg;
+        throw wrapped;
+      }
     }
+  })();
 
-    const wrapped = new Error(friendly);
-    wrapped.status = status;
-    wrapped.body = body;
-    wrapped.url = url;
-    wrapped.apiMsg = apiMsg;
-    throw wrapped;
+  inflight.set(url, promise);
+  try {
+    return await promise;
+  } finally {
+    inflight.delete(url);
   }
 }
 
