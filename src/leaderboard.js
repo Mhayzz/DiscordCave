@@ -42,33 +42,33 @@ function getRankEmoji(guild, rankName) {
 }
 
 async function fetchAccountDetails(account) {
+  let mmr = null;
+  let history = [];
+  let mmrError = null;
+
   try {
-    const [mmr, history] = await Promise.all([
-      getMmr(account.region, account.name, account.tag),
-      getMmrHistory(account.region, account.name, account.tag).catch(() => []),
-    ]);
-    const current = mmr?.current_data || mmr?.current || {};
-    const peak = mmr?.highest_rank || mmr?.peak || {};
-    return {
-      ...account,
-      ok: true,
-      rankName: current.currenttierpatched || current.tier?.name || 'Unranked',
-      rr: current.ranking_in_tier ?? current.rr ?? 0,
-      elo: current.elo ?? 0,
-      peakName: peak.patched_tier || peak.tier?.name || peak.tier || null,
-      day: rrLostToday(history),
-    };
-  } catch {
-    return {
-      ...account,
-      ok: false,
-      rankName: 'N/A',
-      rr: 0,
-      elo: -1,
-      peakName: null,
-      day: { games: 0, net: 0, gained: 0, lost: 0 },
-    };
+    mmr = await getMmr(account.region, account.name, account.tag);
+  } catch (err) {
+    mmrError = err.message;
+    console.warn(`[lb] mmr ${account.name}#${account.tag}: ${err.message}`);
   }
+
+  try {
+    history = await getMmrHistory(account.region, account.name, account.tag);
+  } catch {}
+
+  const current = mmr?.current_data || mmr?.current || mmr || {};
+  const peak = mmr?.highest_rank || mmr?.peak || {};
+  return {
+    ...account,
+    ok: true,
+    rankName: current.currenttierpatched || current.tier?.name || 'Unranked',
+    rr: current.ranking_in_tier ?? current.rr ?? 0,
+    elo: current.elo ?? 0,
+    peakName: peak.patched_tier || peak.tier?.name || peak.tier || null,
+    day: rrLostToday(history),
+    mmrError,
+  };
 }
 
 function formatDay(day) {
@@ -99,13 +99,11 @@ async function buildLeaderboardEmbed(guild = null) {
 
   const userBest = new Map();
   for (const acc of enriched) {
-    if (!acc.ok) continue;
     const prev = userBest.get(acc.discordId);
     if (!prev || acc.elo > prev.elo) userBest.set(acc.discordId, acc);
   }
 
-  const ranked = enriched.filter((a) => a.ok).sort((a, b) => b.elo - a.elo);
-  const errored = enriched.filter((a) => !a.ok);
+  const ranked = [...enriched].sort((a, b) => b.elo - a.elo);
 
   const lines = [HELP_BLOCK, ''];
 
@@ -115,18 +113,12 @@ async function buildLeaderboardEmbed(guild = null) {
     const peakEmoji = acc.peakName ? getRankEmoji(guild, acc.peakName) : '';
     const peakStr = peakEmoji ? ` · peak ${peakEmoji}` : '';
     const dayStr = formatDay(acc.day);
+    const rrStr = acc.elo > 0 ? `\`${acc.rr} RR\`` : '_pas de classée récente_';
 
-    lines.push(`${badge} ${emoji} **${acc.rankName}** · \`${acc.rr} RR\`${dayStr}`);
+    lines.push(`${badge} ${emoji} **${acc.rankName}** · ${rrStr}${dayStr}`);
     lines.push(`┗ <@${acc.discordId}> · \`${acc.name}#${acc.tag}\`${peakStr}`);
     lines.push('');
   });
-
-  if (errored.length > 0) {
-    lines.push(`⚠️ *${errored.length} compte(s) introuvable(s) ou en erreur API*`);
-    for (const e of errored) {
-      lines.push(`• <@${e.discordId}> · \`${e.name}#${e.tag}\``);
-    }
-  }
 
   const totalUsers = userBest.size;
   const totalAccounts = ranked.length;
@@ -144,7 +136,7 @@ async function syncAllRankRoles(guild) {
   const enriched = await Promise.all(accounts.map(fetchAccountDetails));
   const userBest = new Map();
   for (const acc of enriched) {
-    if (!acc.ok) continue;
+    if (acc.elo <= 0) continue;
     const prev = userBest.get(acc.discordId);
     if (!prev || acc.elo > prev.elo) userBest.set(acc.discordId, acc);
   }
