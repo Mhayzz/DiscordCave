@@ -76,8 +76,20 @@ async function getAccount(name, tag) {
 }
 
 async function getMmr(region, name, tag) {
-  const data = await call(`${BASE_URL}/valorant/v3/mmr/${region}/pc/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
-  return data.data;
+  try {
+    const data = await call(`${BASE_URL}/valorant/v3/mmr/${region}/pc/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
+    return data.data;
+  } catch (err) {
+    if (err.status === 404) {
+      try {
+        const data = await call(`${BASE_URL}/valorant/v1/mmr/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
+        return data.data;
+      } catch {
+        throw err;
+      }
+    }
+    throw err;
+  }
 }
 
 async function getMmrHistory(region, name, tag) {
