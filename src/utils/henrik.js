@@ -227,8 +227,19 @@ async function getMmr(region, name, tag) {
 }
 
 async function getMmrHistory(region, name, tag) {
-  const data = await call(`${BASE_URL}/valorant/v1/mmr-history/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
-  return data.data || [];
+  const storedUrl = `${BASE_URL}/valorant/v1/stored-mmr-history/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`;
+  const legacyUrl = `${BASE_URL}/valorant/v1/mmr-history/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`;
+  try {
+    const payload = await call(storedUrl);
+    const list = payload.data ?? payload.history;
+    if (Array.isArray(list)) return list;
+    if (list && Array.isArray(list.history)) return list.history;
+    return [];
+  } catch (err) {
+    if (err.status !== 404 && err.status !== 403) throw err;
+    const payload = await call(legacyUrl);
+    return payload.data || [];
+  }
 }
 
 async function getMatches(region, name, tag, mode = 'competitive', size = 20) {
