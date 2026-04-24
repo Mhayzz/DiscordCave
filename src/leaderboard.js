@@ -1,6 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const { getAllAccounts, getMeta, setMeta } = require('./utils/db');
-const { getMmr, getMmrHistory } = require('./utils/henrik');
+const { getMmr, getMmrHistory, isDegraded } = require('./utils/henrik');
 const { rrLostToday } = require('./utils/stats');
 const { ensureRankRoles, syncMemberRank } = require('./roles');
 
@@ -122,12 +122,14 @@ async function buildLeaderboardEmbed(guild = null, prefetched = null) {
 
   const totalUsers = userBest.size;
   const totalAccounts = ranked.length;
+  const footerBase = `${totalUsers} joueur(s) · ${totalAccounts} compte(s) · auto-update`;
+  const footerText = isDegraded() ? `${footerBase} · ⚠ données partielles (cache)` : footerBase;
 
   return new EmbedBuilder()
     .setColor(0xff4655)
     .setTitle('🎯 CLASSEMENT VALORANT')
     .setDescription(lines.join('\n').slice(0, 4000))
-    .setFooter({ text: `${totalUsers} joueur(s) · ${totalAccounts} compte(s) · auto-update` })
+    .setFooter({ text: footerText })
     .setTimestamp();
 }
 
