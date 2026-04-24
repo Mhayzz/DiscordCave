@@ -4,7 +4,13 @@ const BASE_URL = 'https://api.henrikdev.xyz';
 
 const MAX_CONCURRENT = Math.max(1, Number(process.env.HENRIK_MAX_CONCURRENT || 2));
 const CACHE_TTL_MS = Math.max(0, Number(process.env.HENRIK_CACHE_TTL_MS || 60_000));
-const MAX_RETRIES_429 = 3;
+// How long a cached entry can still be served when the API fails (stale-while-error).
+const STALE_TTL_MS = Math.max(CACHE_TTL_MS, Number(process.env.HENRIK_STALE_TTL_MS || 60 * 60 * 1000));
+const MAX_RETRIES_429 = Math.max(0, Number(process.env.HENRIK_MAX_RETRIES_429 ?? 2));
+// Base backoff for 429 with no Retry-After header (doubled each attempt).
+const BACKOFF_BASE_429_MS = Math.max(500, Number(process.env.HENRIK_BACKOFF_BASE_MS || 5000));
+// After we give up on 429, fail fast (or serve stale cache) on the same URL for this long.
+const COOLDOWN_429_MS = Math.max(0, Number(process.env.HENRIK_COOLDOWN_429_MS || 5 * 60 * 1000));
 
 function hasApiKey() {
   return Boolean(process.env.HENRIK_API_KEY);
@@ -31,9 +37,30 @@ function extractErrorMessage(body) {
 }
 
 const cache = new Map();
+const cooldown = new Map();
 const inflight = new Map();
 const waiters = [];
 let active = 0;
+
+function readCache(url, { allowStale = false } = {}) {
+  const entry = cache.get(url);
+  if (!entry) return null;
+  const now = Date.now();
+  if (entry.expiresAt > now) return { data: entry.data, fresh: true };
+  if (allowStale && entry.staleUntil > now) return { data: entry.data, fresh: false };
+  if (entry.staleUntil <= now) cache.delete(url);
+  return null;
+}
+
+function writeCache(url, data) {
+  if (CACHE_TTL_MS <= 0 && STALE_TTL_MS <= 0) return;
+  const now = Date.now();
+  cache.set(url, {
+    data,
+    expiresAt: now + CACHE_TTL_MS,
+    staleUntil: now + STALE_TTL_MS,
+  });
+}
 
 function acquireSlot() {
   if (active < MAX_CONCURRENT) {
@@ -74,8 +101,19 @@ async function rawRequest(url) {
 }
 
 async function call(url) {
-  const cached = cache.get(url);
-  if (cached && cached.expiresAt > Date.now()) return cached.data;
+  const cached = readCache(url);
+  if (cached) return cached.data;
+
+  const cooldownUntil = cooldown.get(url);
+  if (cooldownUntil && cooldownUntil > Date.now()) {
+    const stale = readCache(url, { allowStale: true });
+    if (stale) return stale.data;
+    const err = new Error('rate limit dépassé, réessaie plus tard');
+    err.status = 429;
+    err.url = url;
+    throw err;
+  }
+  if (cooldownUntil) cooldown.delete(url);
 
   const existing = inflight.get(url);
   if (existing) return existing;
@@ -85,9 +123,7 @@ async function call(url) {
     while (true) {
       try {
         const data = await rawRequest(url);
-        if (CACHE_TTL_MS > 0) {
-          cache.set(url, { data, expiresAt: Date.now() + CACHE_TTL_MS });
-        }
+        writeCache(url, data);
         return data;
       } catch (err) {
         const status = err.response?.status;
@@ -95,12 +131,21 @@ async function call(url) {
 
         if (status === 429 && attempt < MAX_RETRIES_429) {
           const retryAfterMs = parseRetryAfter(err.response?.headers);
-          const backoff = retryAfterMs ?? Math.min(15_000, 1000 * 2 ** attempt);
-          const jitter = Math.floor(Math.random() * 300);
+          const backoff = retryAfterMs ?? Math.min(60_000, BACKOFF_BASE_429_MS * 2 ** attempt);
+          const jitter = Math.floor(Math.random() * 500);
           console.warn(`[Henrik] 429 retry ${attempt + 1}/${MAX_RETRIES_429} in ${backoff + jitter}ms ${url}`);
           await sleep(backoff + jitter);
           attempt += 1;
           continue;
+        }
+
+        if (status === 429) {
+          cooldown.set(url, Date.now() + COOLDOWN_429_MS);
+          const stale = readCache(url, { allowStale: true });
+          if (stale) {
+            console.warn(`[Henrik] 429 persistant, cache obsolète servi pour ${url}`);
+            return stale.data;
+          }
         }
 
         console.error('[Henrik] FAILED', {
