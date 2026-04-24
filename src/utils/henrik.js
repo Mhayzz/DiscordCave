@@ -41,6 +41,15 @@ const cooldown = new Map();
 const inflight = new Map();
 const waiters = [];
 let active = 0;
+let lastDegradedAt = 0;
+
+function markDegraded() {
+  lastDegradedAt = Date.now();
+}
+
+function isDegraded(windowMs = 10 * 60 * 1000) {
+  return lastDegradedAt > 0 && Date.now() - lastDegradedAt < windowMs;
+}
 
 function readCache(url, { allowStale = false } = {}) {
   const entry = cache.get(url);
@@ -106,6 +115,7 @@ async function call(url) {
 
   const cooldownUntil = cooldown.get(url);
   if (cooldownUntil && cooldownUntil > Date.now()) {
+    markDegraded();
     const stale = readCache(url, { allowStale: true });
     if (stale) return stale.data;
     const err = new Error('rate limit dépassé, réessaie plus tard');
@@ -141,6 +151,7 @@ async function call(url) {
 
         if (status === 429) {
           cooldown.set(url, Date.now() + COOLDOWN_429_MS);
+          markDegraded();
           const stale = readCache(url, { allowStale: true });
           if (stale) {
             console.warn(`[Henrik] 429 persistant, cache obsolète servi pour ${url}`);
@@ -231,4 +242,4 @@ async function ping() {
   return data;
 }
 
-module.exports = { getAccount, getMmr, getMmrHistory, getMatches, ping, hasApiKey };
+module.exports = { getAccount, getMmr, getMmrHistory, getMatches, ping, hasApiKey, isDegraded };
