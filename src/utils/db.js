@@ -148,6 +148,10 @@ function sameAccount(a, b) {
 }
 
 function addAccount(discordId, { name, tag, region, puuid }) {
+  if (!name || !tag) {
+    console.warn(`[db] addAccount refusé: name/tag vide (puuid=${puuid})`);
+    return { ok: false, reason: 'invalid', total: 0 };
+  }
   const db = readDb();
   const list = db.users[discordId] || [];
   if (list.some((a) => sameAccount(a, { name, tag }))) {
