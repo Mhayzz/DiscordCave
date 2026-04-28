@@ -11,6 +11,9 @@ const MAX_RETRIES_429 = Math.max(0, Number(process.env.HENRIK_MAX_RETRIES_429 ??
 const BACKOFF_BASE_429_MS = Math.max(500, Number(process.env.HENRIK_BACKOFF_BASE_MS || 5000));
 // After we give up on 429, fail fast (or serve stale cache) on the same URL for this long.
 const COOLDOWN_429_MS = Math.max(0, Number(process.env.HENRIK_COOLDOWN_429_MS || 5 * 60 * 1000));
+// Hard cap on outbound request rate (Henrik free tier = 30/min, on garde une marge).
+const RATE_PER_MIN = Math.max(1, Number(process.env.HENRIK_RATE_PER_MIN || 25));
+const MIN_INTERVAL_MS = Math.ceil(60_000 / RATE_PER_MIN);
 
 function hasApiKey() {
   return Boolean(process.env.HENRIK_API_KEY);
@@ -99,9 +102,19 @@ function parseRetryAfter(headers) {
   return null;
 }
 
+let nextSlotAt = 0;
+async function rateLimitGate() {
+  const now = Date.now();
+  const slot = Math.max(now, nextSlotAt);
+  nextSlotAt = slot + MIN_INTERVAL_MS;
+  const wait = slot - now;
+  if (wait > 0) await sleep(wait);
+}
+
 async function rawRequest(url) {
   await acquireSlot();
   try {
+    await rateLimitGate();
     const { data } = await axios.get(url, { headers: buildHeaders(), timeout: 15000 });
     return data;
   } finally {
