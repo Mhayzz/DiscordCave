@@ -15,7 +15,11 @@ function rrLostToday(mmrHistory) {
     if (!ts || ts < start) continue;
     const change = typeof entry.mmr_change_to_last_game === 'number'
       ? entry.mmr_change_to_last_game
-      : (typeof entry.last_mmr_change === 'number' ? entry.last_mmr_change : 0);
+      : typeof entry.last_mmr_change === 'number'
+        ? entry.last_mmr_change
+        : typeof entry.last_change === 'number'
+          ? entry.last_change
+          : 0;
     if (change < 0) lost += Math.abs(change);
     else gained += change;
     games += 1;

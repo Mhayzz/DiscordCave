@@ -245,18 +245,18 @@ async function getMmr(region, name, tag) {
 }
 
 async function getMmrHistory(region, name, tag) {
-  const storedUrl = `${BASE_URL}/valorant/v1/stored-mmr-history/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`;
-  const legacyUrl = `${BASE_URL}/valorant/v1/mmr-history/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`;
+  const v2Url = `${BASE_URL}/valorant/v2/mmr-history/${region}/pc/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`;
+  const v1Url = `${BASE_URL}/valorant/v1/mmr-history/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`;
   try {
-    const payload = await call(storedUrl);
-    const list = payload.data ?? payload.history;
-    if (Array.isArray(list)) return list;
-    if (list && Array.isArray(list.history)) return list.history;
+    const payload = await call(v2Url);
+    const data = payload?.data;
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.history)) return data.history;
     return [];
   } catch (err) {
-    if (err.status !== 404 && err.status !== 403) throw err;
-    const payload = await call(legacyUrl);
-    return payload.data || [];
+    if (err.status !== 404 && err.status !== 403 && err.status !== 501) throw err;
+    const payload = await call(v1Url);
+    return payload?.data || [];
   }
 }
 
