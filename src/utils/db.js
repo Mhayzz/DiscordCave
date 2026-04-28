@@ -203,6 +203,15 @@ function removeAccount(discordId, riotId) {
   return { removed, remaining: next.length };
 }
 
+// Mapping local de secours: utilisé quand Henrik est rate-limit/down
+// (récupéré depuis le seed initial après le bug du seed pré-validation).
+const PUUID_REPAIR_MAP = {
+  '17d2418c-138a-5641-9be4-6b1b07ba88da': { name: 'Neyxaa', tag: '009', region: 'eu' },
+  '5144962e-d884-55a0-a05f-ac02238f54b6': { name: 'Killu', tag: '667', region: 'eu' },
+  '6aef99f4-d4a0-5e27-94d3-14c402694cdf': { name: 'zivago953', tag: 'EUW', region: 'eu' },
+  '246393da-48f2-5ef7-925a-c06a9e1340d1': { name: 'Macaa', tag: '3474', region: 'eu' },
+};
+
 async function repairInvalid() {
   const { getAccountByPuuid } = require('./henrik');
   let repaired = 0;
@@ -210,28 +219,38 @@ async function repairInvalid() {
   for (const list of Object.values(memDb.users)) {
     for (const acc of list) {
       if ((acc.name && acc.tag) || !acc.puuid) continue;
+      let fixed = false;
       try {
         const fresh = await getAccountByPuuid(acc.puuid);
         if (fresh?.name && fresh?.tag) {
           acc.name = fresh.name;
           acc.tag = fresh.tag;
           acc.region = fresh.region || acc.region;
-          repaired += 1;
-          console.log(`[db] réparé: ${acc.name}#${acc.tag}`);
-        } else {
-          failed += 1;
+          fixed = true;
+          console.log(`[db] réparé via API: ${acc.name}#${acc.tag}`);
         }
       } catch (e) {
-        failed += 1;
-        console.warn(`[db] réparation échouée puuid=${acc.puuid}: ${e.message}`);
+        console.warn(`[db] API repair failed puuid=${acc.puuid}: ${e.message}`);
       }
+      if (!fixed) {
+        const known = PUUID_REPAIR_MAP[acc.puuid];
+        if (known) {
+          acc.name = known.name;
+          acc.tag = known.tag;
+          acc.region = known.region || acc.region;
+          fixed = true;
+          console.log(`[db] réparé via mapping local: ${acc.name}#${acc.tag}`);
+        }
+      }
+      if (fixed) repaired += 1;
+      else failed += 1;
     }
   }
   if (repaired > 0) {
     console.log(`[db] ${repaired} entrée(s) réparée(s), ${failed} échec(s)`);
     scheduleSync();
   } else if (failed > 0) {
-    console.log(`[db] ${failed} entrée(s) cassée(s) mais réparation impossible (réessai au prochain boot)`);
+    console.log(`[db] ${failed} entrée(s) impossible à réparer`);
   }
 }
 
