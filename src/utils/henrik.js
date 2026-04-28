@@ -156,6 +156,8 @@ async function call(url) {
           const retryAfterMs = parseRetryAfter(err.response?.headers);
           const backoff = retryAfterMs ?? Math.min(60_000, BACKOFF_BASE_429_MS * 2 ** attempt);
           const jitter = Math.floor(Math.random() * 500);
+          // Push global rate gate: aucune autre requête ne part pendant la cooldown
+          nextSlotAt = Math.max(nextSlotAt, Date.now() + backoff);
           console.warn(`[Henrik] 429 retry ${attempt + 1}/${MAX_RETRIES_429} in ${backoff + jitter}ms ${url}`);
           await sleep(backoff + jitter);
           attempt += 1;
@@ -164,6 +166,8 @@ async function call(url) {
 
         if (status === 429) {
           cooldown.set(url, Date.now() + COOLDOWN_429_MS);
+          // Cooldown global: laisse la fenêtre de rate limit se vider avant tout autre call
+          nextSlotAt = Math.max(nextSlotAt, Date.now() + 30_000);
           markDegraded();
           const stale = readCache(url, { allowStale: true });
           if (stale) {
@@ -172,12 +176,17 @@ async function call(url) {
           }
         }
 
-        console.error('[Henrik] FAILED', {
-          url,
-          status,
-          hasApiKey: hasApiKey(),
-          body: typeof body === 'object' ? JSON.stringify(body).slice(0, 400) : String(body).slice(0, 400),
-        });
+        if (!status) {
+          // Erreur réseau / timeout (pas de réponse HTTP) — moins bruyant que FAILED
+          console.warn(`[Henrik] network error ${url}: ${err.code || err.message}`);
+        } else {
+          console.error('[Henrik] FAILED', {
+            url,
+            status,
+            hasApiKey: hasApiKey(),
+            body: typeof body === 'object' ? JSON.stringify(body).slice(0, 400) : String(body).slice(0, 400),
+          });
+        }
 
         const apiMsg = extractErrorMessage(body);
         let friendly;
