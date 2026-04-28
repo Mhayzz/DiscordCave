@@ -1,50 +1,145 @@
-const fs = require('fs');
-const path = require('path');
-
 const MAX_ACCOUNTS = 3;
+const STORAGE_CHANNEL_ID = process.env.STORAGE_CHANNEL_ID;
+const SYNC_DEBOUNCE_MS = 500;
 
-const DATA_DIR = process.env.DATA_DIR
-  || process.env.RAILWAY_VOLUME_MOUNT_PATH
-  || path.join(__dirname, '..', '..', 'data');
-const DB_FILE = path.join(DATA_DIR, 'users.json');
+let memDb = { users: {}, meta: {} };
+let storageChannel = null;
+let storageMessage = null;
+let syncTimer = null;
+let pendingSync = false;
+let syncing = false;
 
-function ensureDb() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify({ users: {}, meta: {} }, null, 2));
-  }
+function emptyDb() {
+  return { users: {}, meta: {} };
+}
+
+function serialize(db) {
+  return '```json\n' + JSON.stringify(db) + '\n```';
+}
+
+function deserialize(content) {
+  const match = content.match(/```(?:json)?\n?([\s\S]*?)\n?```/);
+  const raw = match ? match[1] : content;
+  return JSON.parse(raw);
 }
 
 function migrateEntry(entry) {
   if (Array.isArray(entry)) return entry;
-  if (entry && typeof entry === 'object' && entry.name && entry.tag) {
-    return [entry];
-  }
+  if (entry && typeof entry === 'object' && entry.name && entry.tag) return [entry];
   return [];
 }
 
-function readDb() {
-  ensureDb();
-  const raw = fs.readFileSync(DB_FILE, 'utf8');
-  let parsed;
+function migrateAll(db) {
+  const out = { users: {}, meta: db?.meta || {} };
+  for (const [id, val] of Object.entries(db?.users || {})) {
+    out.users[id] = migrateEntry(val);
+  }
+  return out;
+}
+
+async function init(client) {
+  if (!STORAGE_CHANNEL_ID) {
+    console.warn('[db] STORAGE_CHANNEL_ID non défini, données en RAM (perdues au redémarrage)');
+    return;
+  }
   try {
-    parsed = JSON.parse(raw);
-  } catch {
-    parsed = { users: {}, meta: {} };
+    storageChannel = await client.channels.fetch(STORAGE_CHANNEL_ID);
+  } catch (err) {
+    console.error('[db] salon stockage introuvable:', err.message);
+    return;
   }
-  if (!parsed.users) parsed.users = {};
-  if (!parsed.meta) parsed.meta = {};
-  for (const id of Object.keys(parsed.users)) {
-    parsed.users[id] = migrateEntry(parsed.users[id]);
+  if (!storageChannel?.isTextBased?.()) {
+    console.error('[db] salon stockage non textuel');
+    storageChannel = null;
+    return;
   }
-  return parsed;
+
+  let candidate = null;
+  try {
+    const pinned = await storageChannel.messages.fetchPinned();
+    candidate = pinned.find((m) => m.author?.id === client.user.id) || null;
+  } catch {}
+
+  if (!candidate) {
+    try {
+      const recent = await storageChannel.messages.fetch({ limit: 50 });
+      candidate = recent.find((m) =>
+        m.author?.id === client.user.id && /"users"\s*:/.test(m.content || '')
+      ) || null;
+    } catch {}
+  }
+
+  if (candidate) {
+    try {
+      memDb = migrateAll(deserialize(candidate.content));
+      storageMessage = candidate;
+      console.log(`[db] chargé depuis Discord: ${Object.keys(memDb.users).length} user(s)`);
+    } catch (err) {
+      console.error('[db] parse échoué, mémoire vide:', err.message);
+      storageMessage = candidate;
+    }
+  } else {
+    try {
+      storageMessage = await storageChannel.send({ content: serialize(memDb) });
+      await storageMessage.pin().catch((e) => console.warn('[db] pin échoué:', e.message));
+      console.log('[db] message de stockage créé');
+    } catch (err) {
+      console.error('[db] création message échouée:', err.message);
+    }
+  }
+}
+
+function readDb() {
+  return memDb;
 }
 
 function writeDb(db) {
-  ensureDb();
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  memDb = db;
+  scheduleSync();
+}
+
+function scheduleSync() {
+  if (!storageChannel) return;
+  if (syncTimer) return;
+  syncTimer = setTimeout(runSync, SYNC_DEBOUNCE_MS);
+}
+
+async function runSync() {
+  syncTimer = null;
+  if (syncing) {
+    pendingSync = true;
+    return;
+  }
+  syncing = true;
+  try {
+    const content = serialize(memDb);
+    if (content.length > 1900) {
+      console.warn(`[db] message ${content.length}/2000 chars, proche de la limite Discord`);
+    }
+    if (storageMessage) {
+      try {
+        storageMessage = await storageMessage.edit({ content });
+      } catch (err) {
+        if (err.code === 10008) {
+          storageMessage = await storageChannel.send({ content });
+          await storageMessage.pin().catch(() => {});
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      storageMessage = await storageChannel.send({ content });
+      await storageMessage.pin().catch(() => {});
+    }
+  } catch (err) {
+    console.error('[db] sync échoué:', err.message);
+  } finally {
+    syncing = false;
+    if (pendingSync) {
+      pendingSync = false;
+      scheduleSync();
+    }
+  }
 }
 
 function sameAccount(a, b) {
@@ -129,6 +224,7 @@ function setMeta(key, value) {
 
 module.exports = {
   MAX_ACCOUNTS,
+  init,
   addAccount,
   getAccounts,
   getAccountByRiotId,
