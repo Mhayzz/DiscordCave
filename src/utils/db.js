@@ -202,11 +202,17 @@ function removeAccount(discordId, riotId) {
 function getAllAccounts() {
   const db = readDb();
   const out = [];
+  let dropped = 0;
   for (const [discordId, list] of Object.entries(db.users)) {
     for (const account of list) {
+      if (!account?.name || !account?.tag) {
+        dropped += 1;
+        continue;
+      }
       out.push({ discordId, ...account });
     }
   }
+  if (dropped > 0) console.warn(`[db] ${dropped} entrée(s) invalide(s) ignorée(s) (name/tag vide)`);
   return out;
 }
 
