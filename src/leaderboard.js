@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const { getAllAccounts, getMeta, setMeta } = require('./utils/db');
+const { getAllAccounts, getMeta, setMeta, repairInvalid } = require('./utils/db');
 const { getMmr, getMmrHistory, isDegraded } = require('./utils/henrik');
 const { rrLostToday } = require('./utils/stats');
 const { ensureRankRoles, syncMemberRank } = require('./roles');
@@ -171,6 +171,8 @@ async function updateLeaderboard(client, channelId) {
   }
 
   await cleanupOldHelpMessage(channel);
+
+  await repairInvalid().catch((e) => console.warn('[lb] repair:', e.message));
 
   const accounts = getAllAccounts();
   const enriched = accounts.length > 0
