@@ -209,6 +209,11 @@ async function getAccount(name, tag) {
   return data.data;
 }
 
+async function getAccountByPuuid(puuid) {
+  const data = await call(`${BASE_URL}/valorant/v1/by-puuid/account/${encodeURIComponent(puuid)}`);
+  return data.data;
+}
+
 async function getMmr(region, name, tag) {
   try {
     const data = await call(`${BASE_URL}/valorant/v3/mmr/${region}/pc/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
@@ -253,4 +258,4 @@ async function ping() {
   return data;
 }
 
-module.exports = { getAccount, getMmr, getMmrHistory, getMatches, ping, hasApiKey, isDegraded };
+module.exports = { getAccount, getAccountByPuuid, getMmr, getMmrHistory, getMatches, ping, hasApiKey, isDegraded };

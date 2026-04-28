@@ -203,6 +203,38 @@ function removeAccount(discordId, riotId) {
   return { removed, remaining: next.length };
 }
 
+async function repairInvalid() {
+  const { getAccountByPuuid } = require('./henrik');
+  let repaired = 0;
+  let failed = 0;
+  for (const list of Object.values(memDb.users)) {
+    for (const acc of list) {
+      if ((acc.name && acc.tag) || !acc.puuid) continue;
+      try {
+        const fresh = await getAccountByPuuid(acc.puuid);
+        if (fresh?.name && fresh?.tag) {
+          acc.name = fresh.name;
+          acc.tag = fresh.tag;
+          acc.region = fresh.region || acc.region;
+          repaired += 1;
+          console.log(`[db] réparé: ${acc.name}#${acc.tag}`);
+        } else {
+          failed += 1;
+        }
+      } catch (e) {
+        failed += 1;
+        console.warn(`[db] réparation échouée puuid=${acc.puuid}: ${e.message}`);
+      }
+    }
+  }
+  if (repaired > 0) {
+    console.log(`[db] ${repaired} entrée(s) réparée(s), ${failed} échec(s)`);
+    scheduleSync();
+  } else if (failed > 0) {
+    console.log(`[db] ${failed} entrée(s) cassée(s) mais réparation impossible (réessai au prochain boot)`);
+  }
+}
+
 function getAllAccounts() {
   const db = readDb();
   const out = [];
@@ -235,6 +267,7 @@ function setMeta(key, value) {
 module.exports = {
   MAX_ACCOUNTS,
   init,
+  repairInvalid,
   addAccount,
   getAccounts,
   getAccountByRiotId,

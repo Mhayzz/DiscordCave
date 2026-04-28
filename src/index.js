@@ -5,7 +5,7 @@ const path = require('path');
 const { deployCommands } = require('./deploy-commands');
 const { startLeaderboardLoop } = require('./leaderboard');
 const { hasApiKey } = require('./utils/henrik');
-const { init: initDb } = require('./utils/db');
+const { init: initDb, repairInvalid } = require('./utils/db');
 const { runSeed } = require('./seed');
 
 const client = new Client({
@@ -45,6 +45,12 @@ client.once(Events.ClientReady, async (c) => {
     await initDb(c);
   } catch (err) {
     console.error('[db] init échoué:', err.message);
+  }
+
+  try {
+    await repairInvalid();
+  } catch (err) {
+    console.error('[db] repair échoué:', err.message);
   }
 
   try {
